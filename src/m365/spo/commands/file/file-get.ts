@@ -85,35 +85,39 @@ class SpoFileGetCommand extends SpoCommand {
       headers: {
         'accept': 'application/json;odata=nometadata'
       },
-      encoding: null, // Set encoding to null, otherwise binary data will be encoded to utf8 and binary data is corrupt 
+      encoding: null, // Set encoding to null, otherwise binary data will be encoded to utf8 and binary data is corrupt
       json: true
     };
 
-    request
-      .get<string>(requestOptions)
-      .then((file: string): void => {
-        if (args.options.asString) {
-          cmd.log(file.toString());
-        }
-        else if (args.options.asListItem) {
-          const fileProperties: FileProperties = JSON.parse(JSON.stringify(file));
-          cmd.log(fileProperties.ListItemAllFields)
-        }
-        else if (args.options.asFile) {
-          if (args.options.path) {
-            fs.writeFileSync(args.options.path, file);
-            if (this.verbose) {
-              cmd.log(`File saved to path ${args.options.path}`);
-            }
+    if (args.options.asFile) {
+      request
+        .getLargeFile<string>(requestOptions, args.options.path as string)
+        .then((file: string): void => {
+          if (this.verbose) {
+            cmd.log(`File saved at ${file}`);
           }
-        }
-        else {
-          const fileProperties: FileProperties = JSON.parse(JSON.stringify(file));
-          cmd.log(fileProperties);
-        }
+          cb();
+        }, (err: any): void => this.handleRejectedODataJsonPromise(err, cmd, cb));
+    }
+    else {
+      request
+        .get<string>(requestOptions)
+        .then((file: string): void => {
+          if (args.options.asString) {
+            cmd.log(file.toString());
+          }
+          else if (args.options.asListItem) {
+            const fileProperties: FileProperties = JSON.parse(JSON.stringify(file));
+            cmd.log(fileProperties.ListItemAllFields)
+          }
+          else {
+            const fileProperties: FileProperties = JSON.parse(JSON.stringify(file));
+            cmd.log(fileProperties);
+          }
 
-        cb();
-      }, (err: any): void => this.handleRejectedODataJsonPromise(err, cmd, cb));
+          cb();
+        }, (err: any): void => this.handleRejectedODataJsonPromise(err, cmd, cb));
+    }
   }
 
   public options(): CommandOption[] {
@@ -206,7 +210,7 @@ class SpoFileGetCommand extends SpoCommand {
     log(vorpal.find(this.name).helpInformation());
     log(
       `  Examples:
-  
+
     Get file properties for file with id (UniqueId) ${chalk.grey('b2307a39-e878-458b-bc90-03bc578531d6')}
     located in site ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')}
       ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --id 'b2307a39-e878-458b-bc90-03bc578531d6'
@@ -218,13 +222,13 @@ class SpoFileGetCommand extends SpoCommand {
     Get list item properties for file with id (UniqueId)
     ${chalk.grey('b2307a39-e878-458b-bc90-03bc578531d6')} located in site
     ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')}
-      ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --id 'b2307a39-e878-458b-bc90-03bc578531d6' --asListItem   
+      ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --id 'b2307a39-e878-458b-bc90-03bc578531d6' --asListItem
 
     Save file with id (UniqueId) ${chalk.grey('b2307a39-e878-458b-bc90-03bc578531d6')} located
     in site ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')} to local file
     ${chalk.grey('/Users/user/documents/SavedAsTest1.docx')}
       ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --id 'b2307a39-e878-458b-bc90-03bc578531d6' --asFile --path /Users/user/documents/SavedAsTest1.docx
-    
+
     Return file properties for file with server-relative url
     ${chalk.grey('/sites/project-x/documents/Test1.docx')} located in site
     ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')}
@@ -238,7 +242,7 @@ class SpoFileGetCommand extends SpoCommand {
     Return list item properties for file with server-relative url
     ${chalk.grey('/sites/project-x/documents/Test1.docx')} located in site
     ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')}
-      ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --url '/sites/project-x/documents/Test1.docx' --asListItem   
+      ${commands.FILE_GET} --webUrl https://contoso.sharepoint.com/sites/project-x --url '/sites/project-x/documents/Test1.docx' --asListItem
 
     Save file with server-relative url ${chalk.grey('/sites/project-x/documents/Test1.docx')}
     located in site ${chalk.grey('https://contoso.sharepoint.com/sites/project-x')}

@@ -1,6 +1,9 @@
+import * as requestbase from 'request';
 import * as request from 'request-promise-native';
 import { RequestError } from 'request-promise-native/errors';
 import auth, { Auth } from './Auth';
+import * as fs from 'fs';
+
 const packageJSON = require('../package.json');
 
 class Request {
@@ -32,6 +35,11 @@ class Request {
   public get<TResponse>(options: request.OptionsWithUrl): Promise<TResponse> {
     options.method = 'GET';
     return this.execute(options);
+  }
+
+  public getLargeFile<String>(options: request.OptionsWithUrl, filePath: string): Promise<string> {
+    options.method = 'GET';
+    return this.executeForLargeFiles(options, filePath);
   }
 
   public patch<TResponse>(options: request.OptionsWithUrl): Promise<TResponse> {
@@ -105,6 +113,81 @@ class Request {
             }
             setTimeout(() => {
               this.execute(options, resolve || _resolve, reject || _reject);
+            }, retryAfter * 1000);
+          }
+          else {
+            if (reject) {
+              reject(error);
+            }
+            else {
+              _reject(error);
+            }
+          }
+        });
+    });
+  }
+
+  private executeForLargeFiles<String>(options: request.OptionsWithUrl, filePath: string, resolve?: (res: string) => void, reject?: (error: any) => void): Promise<string> {
+    if (!this._cmd) {
+      return Promise.reject('Command reference not set on the request object');
+    }
+
+    return new Promise<string>((_resolve: (res: string) => void, _reject: (error: any) => void): void => {
+      const resource: string = Auth.getResourceFromUrl(options.url.toString());
+
+      ((): Promise<string> => {
+        if (options.headers && options.headers['x-anonymous']) {
+          return Promise.resolve('');
+        }
+        else {
+          return auth.ensureAccessToken(resource, this._cmd as CommandInstance, request.debug)
+        }
+      })()
+        .then((accessToken: string): Promise<string> => {
+          if (options.headers) {
+            if (options.headers['x-anonymous']) {
+              delete options.headers['x-anonymous'];
+            }
+            else {
+              options.headers.authorization = `Bearer ${accessToken}`;
+            }
+          }
+
+          return new Promise((resolve, reject) => {
+            requestbase.get(options).pipe(fs.createWriteStream(filePath)).on('finish', () => {
+              resolve(filePath);
+            })
+              .on('error', (error: any) => {
+                reject(error);
+              })
+          });
+
+        })
+        .then((res: string): void => {
+          if (request.debug) {
+            (this._cmd as CommandInstance).log(JSON.stringify(res));
+          }
+          if (resolve) {
+            resolve(res);
+          }
+          else {
+            _resolve(res);
+          }
+        }, (error: RequestError): void => {
+          (this._cmd as CommandInstance).log('error')
+
+          if (error && error.response &&
+            (error.response.statusCode === 429 ||
+              error.response.statusCode === 503)) {
+            let retryAfter: number = parseInt(error.response.headers['retry-after'] || '10');
+            if (isNaN(retryAfter)) {
+              retryAfter = 10;
+            }
+            if (request.debug) {
+              (this._cmd as CommandInstance).log(`Request throttled. Waiting ${retryAfter}sec before retrying...`);
+            }
+            setTimeout(() => {
+              this.executeForLargeFiles(options, filePath, resolve || _resolve, reject || _reject);
             }, retryAfter * 1000);
           }
           else {
